@@ -6,6 +6,7 @@
 #include <kernel/kmalloc.h>
 #include <kernel/mmu.h>
 #include <kernel/sbd.h>
+#include <kernel/task.h>
 #include <kernel/object/directory.h>
 #include <kernel/object/object.h>
 #include <kernel/object/processor.h>
@@ -41,12 +42,54 @@ struct MADT {
     uint32_t flags;
 }__attribute__((packed));
 
+struct FADT {
+    struct SDTHeader sdt_header;
+    uint32_t firmware_ctl;
+    uint32_t dsdt;
+    uint8_t reserved1;
+    uint8_t preferred_pmp;
+    uint16_t sci_interrupt;
+    uint32_t smi_commandport;
+    uint8_t acpi_enable;
+    uint8_t acpi_disable;
+    uint8_t s4bios_req;
+    uint8_t pstate_control;
+    uint32_t pm1a_event_block;
+    uint32_t pm1b_event_block;
+    uint32_t pm1a_control_block;
+    uint32_t pm1b_control_block;
+    uint32_t pm2_control_block;
+    uint32_t pm_timer_block;
+    uint32_t gpe0_block;
+    uint32_t gpe1_block;
+    uint8_t pm1_event_length;
+    uint8_t pm1_control_length;
+    uint8_t pm2_control_length;
+    uint8_t pm_timer_length;
+    uint8_t gpe0_length;
+    uint8_t gpe1_length;
+    uint8_t gpe1_base;
+    uint8_t c_state_control;
+    uint16_t worst_c2_latency;
+    uint16_t worst_c3_latency;
+    uint16_t flush_size;
+    uint16_t flush_stride;
+    uint8_t duty_offset;
+    uint8_t duty_width;
+    uint8_t day_alarm;
+    uint8_t month_alarm;
+    uint8_t century;
+    uint16_t boot_architecture_flags;
+}__attribute__((packed));
+
 static struct MADT *madt = 0;
+static struct FADT *fadt = 0;
 static uintptr_t lapic_address = 0;
 static uintptr_t ioapic_address = 0;
 static uintptr_t initial_stacks[16][512] = {0};
 static uintptr_t *stack_pointer = (uintptr_t *) &initial_stacks;
 static volatile int wait = 0;
+static char supports_ps2 = 0;
 
 uint32_t read_lapic(uint32_t offset){
     return ((uint32_t *)lapic_address)[offset / 4];
@@ -94,7 +137,7 @@ void HalInitializeProcessors(){
     extern uintptr_t kernel_pml4[512];
     extern void ap_trampoline();
 
-    KernelMapPage(kernel_pml4, 0x8000, 0x8000);
+    KernelMapPage(kernel_pml4, 0x8000, 0x8000, 0);
 
     memcpy((void *)0x8000, &ap_trampoline, 0x1000);
     memcpy((void *)0x8C00, &cr3, 0x8);
@@ -144,18 +187,22 @@ void HalEnableTimer(){
 
     uint64_t old_time = rdtsc();
     write_lapic(0x3E0, 0x3);
-    write_lapic(0x380, 0xFFFFFFFFF);
+    write_lapic(0x380, 0xFFFFFFFF);
 
-    while(rdtsc() < old_time + 100000){
+    while(rdtsc() < old_time + 100){
     }
 
     write_lapic(0x320, 0x10000);
-    uint32_t ticks = 0xFFFFFFFFF - read_lapic(0x390);
+    uint32_t ticks = 0xFFFFFFFF - read_lapic(0x390);
 
     write_lapic(0xF0, 0x127);
     write_lapic(0x320, 0x20020);
     write_lapic(0x3E0, 0x3);
-    write_lapic(0x380, ticks);
+    write_lapic(0x380, 12000);
+
+    HalSetIrqEntry(0, KernelSwitchProcess);
+    HalMapInterrupt(0, 32);
+    HalUnmaskInterrupt(0);
     asm("sti");
 }
 
@@ -170,6 +217,8 @@ void KernelParseAcpi(){
         struct SDTHeader *header = (void *)(other_headers[i] + KernelGetHhdmOffset());
         if(strncmp("APIC", header->signature, 4) == 0) {
             madt = (void *)header;
+        } else if(strncmp("FACP", header->signature, 4) == 0) {
+            fadt = (void *)header;
         }
     }
 
@@ -185,4 +234,14 @@ void KernelParseAcpi(){
             i += *(pointer + i + 1);
         }
     }
+
+    if(fadt){
+        if(fadt->boot_architecture_flags & 2) {
+            supports_ps2 = 1;
+        }
+    }
+}
+
+char HalDoesSupportPs2(){
+    return supports_ps2;
 }

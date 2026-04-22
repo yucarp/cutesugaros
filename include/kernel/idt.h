@@ -57,8 +57,9 @@ struct x86Registers {
 
     uint64_t interrupt_no, error_code;
 
-    uint64_t rip, cs, rflags, ursp;
+    uint64_t rip, cs, rflags, ursp, ss;
 };
 
 void HalInitializeInterrupts();
 void HalLoadIdtAp();
+void HalSetIrqEntry(int index, void *function);

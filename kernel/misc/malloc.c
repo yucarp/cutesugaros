@@ -65,6 +65,7 @@ void *malloc(size_t size){
             first_big_bin_header->head = (void *)((uintptr_t)first_big_bin_header + sizeof(struct MallocBigBinHeader));
             first_big_bin_header->size = list;
             first_big_bin_header->used = 1;
+            first_big_bin_header->next = 0;
             for(int i = 1; i <= (2 << (list - 9)); ++i){
                 KernelExpandHeap();
             }
@@ -81,6 +82,7 @@ void *malloc(size_t size){
             traversal->next->head = (void *)((uintptr_t)traversal->next + sizeof(struct MallocBigBinHeader));
             traversal->next->size = size;
             traversal->next->used = 1;
+            traversal->next->next = 0;
             for(int i = 1; i <= (2 << (list - 9)); ++i){
                 KernelExpandHeap();
             }

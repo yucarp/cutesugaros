@@ -69,7 +69,8 @@ void *KernelExpandHeap(){
     return (void *)(KernelAllocateFrame() + KernelGetHhdmOffset());
 }
 
-void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_address){
+void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_address, char user){
+    uint64_t value = user ? 7 : 3;
     uintptr_t pml4_index = (virtual_address >> 39) & 0x1FF;
     uintptr_t hpd_index = (virtual_address >> 30) & 0x1FF;
     uintptr_t lpd_index = (virtual_address >> 21) & 0x1FF;
@@ -81,7 +82,7 @@ void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_
 
     if(!(hpd_address & 1)){
         hpd_address = KernelAllocateFrame();
-        root[pml4_index] = hpd_address | 3;
+        root[pml4_index] = hpd_address | value;
     }
 
     hpd_address |= KernelGetHhdmOffset();
@@ -92,7 +93,7 @@ void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_
 
     if(!(lpd_address & 1)){
         lpd_address = KernelAllocateFrame();
-        hpd[hpd_index] = lpd_address | 3;
+        hpd[hpd_index] = lpd_address | value;
     }
 
     uint64_t *lpd = (void *) ((lpd_address & ~PAGE_ENTRY) | KernelGetHhdmOffset());
@@ -101,13 +102,13 @@ void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_
 
     if(!(pt_address & 1)){
         pt_address = KernelAllocateFrame();
-        lpd[lpd_index] = pt_address | 3;
+        lpd[lpd_index] = pt_address | value;
     }
 
     uint64_t *pt = (void *)((pt_address & ~PAGE_ENTRY) | KernelGetHhdmOffset());
 
     if(pt[pt_index] & 1) return;
-    pt[pt_index] = physical_address | 3;
+    pt[pt_index] = physical_address | value;
 }
 
 int KernelUnmapPage(uintptr_t *root, uint64_t virtual_address){
@@ -167,14 +168,14 @@ void KernelInitializePaging(){
         }
     }
 
-    kernel_pml4[256] = (uintptr_t) KernelGetPhysicalAddress(old_root, (uintptr_t) hhdm_hpd) | 3;
+    kernel_pml4[256] = (uintptr_t) KernelGetPhysicalAddress(old_root, (uintptr_t) hhdm_hpd) | 7;
 
     for(uint64_t hpdp = 0; hpdp < 4; ++hpdp){
-        hhdm_hpd[hpdp] = KernelGetPhysicalAddress(old_root, (uintptr_t) hhdm_lpd[hpdp]) | 3;
+        hhdm_hpd[hpdp] = KernelGetPhysicalAddress(old_root, (uintptr_t) hhdm_lpd[hpdp]) | 7;
         for(uint64_t hpd = 0; hpd < 512; ++hpd){
-            hhdm_lpd[hpdp][hpd] = KernelGetPhysicalAddress(old_root, (uintptr_t) hhdm_pt[hpdp][hpd]) | 3;
+            hhdm_lpd[hpdp][hpd] = KernelGetPhysicalAddress(old_root, (uintptr_t) hhdm_pt[hpdp][hpd]) | 7;
             for(uint64_t hpt = 0; hpt < 1024; ++hpt){
-                hhdm_pt[hpdp][hpd][hpt] = ((hpdp << 30) + (hpd << 21) + (hpt << 12)) | 3;
+                hhdm_pt[hpdp][hpd][hpt] = ((hpdp << 30) + (hpd << 21) + (hpt << 12)) | 7;
             }
         }
     }

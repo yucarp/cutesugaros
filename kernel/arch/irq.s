@@ -80,6 +80,10 @@ IRQ 15, 47
 
 .global isr_common
 isr_common:
+	cmpq $8, 24(%rsp)
+	je 1f
+	swapgs
+1:
 	pushq %rax
 	pushq %rbx
 	pushq %rcx
@@ -115,6 +119,10 @@ isr_common:
 	popq %rbx
 	popq %rax
 
+	cmpq $8, 24(%rsp)
+	je 2f
+	swapgs
+2:
 	add $16, %rsp
     iretq
 
@@ -130,13 +138,12 @@ switch_task:
 	push %r14
 	push %r15
 
-	mov %cr3, %r11
-	mov %r11, 16(%rsi)
 	mov %rsp, 8(%rsi)
 
-	mov 16(%rdi), %r11
-	mov %r11, %cr3
 	mov 8(%rdi), %rsp
+
+	mov $spinlock, %rdi
+	call unlock
 
 	pop %r15
 	pop %r14
@@ -145,6 +152,79 @@ switch_task:
 	pop %rbp
 	pop %rbx
 
-	mov $spinlock, %rdi
-	call unlock
 	ret
+
+.global switch_to_user
+switch_to_user:
+	mov $35, %ax
+	mov %ax, %ds
+	mov %ax, %fs
+	mov %ax, %gs
+
+	mov %rsp, %rax
+	push $35
+	push %rax
+	pushfq
+	push $27
+	push %rdi
+
+	iretq
+
+.global syscall_handler
+syscall_handler:
+	swapgs
+	mov %rsp, %gs:0x78
+
+	pushq $0x23
+	pushq %gs:0x78
+	pushfq
+	pushq $0x2b
+	push %rdi
+
+	pushq $0
+	pushq $0
+
+	pushq %rax
+	pushq %rbx
+	pushq %rcx
+	pushq %rdx
+	pushq %rbp
+	pushq %rsi
+	pushq %rdi
+	pushq %r8
+	pushq %r9
+	pushq %r10
+	pushq %r11
+	pushq %r12
+	pushq %r13
+	pushq %r14
+	pushq %r15
+
+	mov %rsp, %rdi
+	call syscall_handler_inner
+
+	popq %r15
+	popq %r14
+	popq %r13
+	popq %r12
+	popq %r11
+	popq %r10
+	popq %r9
+	popq %r8
+    add $8, %rsp
+	popq %rsi
+	popq %rbp
+	popq %rdx
+	popq %rcx
+	popq %rbx
+	popq %rax
+
+	add $16, %rsp
+
+	pop %rdi
+	add $8, %rsp
+	popfq
+	pop %rsp
+
+	swapgs
+	iretq

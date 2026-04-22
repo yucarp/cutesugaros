@@ -4,6 +4,7 @@
 #include <kernel/sbd.h>
 #include <kernel/task.h>
 
+#define SYSCALL_FUNCTION int (*)(int,  int)
 struct IDTEntry {
     uint16_t offset_low;
     uint16_t segment_selector;
@@ -23,6 +24,7 @@ struct IDTEntry idt[256] = {0};
 struct IDTPointer idtp = {0, 0};
 
 void (*irq_entries[16]) (struct x86Registers*) = {0};
+int (*syscall_entries[2]) (int, int) = {(SYSCALL_FUNCTION)GetCurrentProcessId, (SYSCALL_FUNCTION)KernelCloneProcess};
 
 void set_idt_entry(int index, uintptr_t handler, uint16_t segment_selector, uint8_t type, uint8_t ist){
     idt[index].offset_low = (handler & 0xFFFF);
@@ -32,6 +34,7 @@ void set_idt_entry(int index, uintptr_t handler, uint16_t segment_selector, uint
     idt[index].type = type;
     idt[index].ist = ist;
 }
+
 void acpi_timer_handler(){
     KernelSwitchProcess();
 }
@@ -41,8 +44,22 @@ void isr_handler(struct x86Registers *regs){
         asm("cli");
         asm("hlt");
     }
-    else if(regs->interrupt_no >= 32) { HalEndOfInterrupt(); acpi_timer_handler(); kprint("Hello");}
+    else if(regs->interrupt_no >= 32) {
+        HalEndOfInterrupt();
+        if(irq_entries[regs->interrupt_no - 32]) irq_entries[regs->interrupt_no - 32](regs);
+    }
+
     else {kprint("An error has occured, fault no: %x", regs->interrupt_no); asm("hlt");}
+}
+
+void syscall_handler_inner(struct x86Registers *regs){
+    if(regs->rax > 1) return;
+    syscall_entries[regs->rax](regs->rdi, regs->rsi);
+}
+
+void HalSetIrqEntry(int index, void *function){
+    if(index > 15) return;
+    irq_entries[index] = function;
 }
 
 void HalInitializeInterrupts(){
@@ -64,6 +81,8 @@ void HalInitializeInterrupts(){
         set_idt_entry(32 + i, (uintptr_t) irq_functions[i], 0x08, 0x8E, 0);
     };
 
+    extern void syscall_handler(struct x86Registers *);
+    set_idt_entry(128, (uintptr_t)syscall_handler, 0x08, 0x8E | 0x60, 0);
     asm volatile (
         "lidt %0"
         : : "m"(idtp)

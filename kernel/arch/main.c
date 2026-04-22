@@ -9,18 +9,26 @@
 #include <kernel/fs/ext2.h>
 #include <kernel/object/directory.h>
 #include <kernel/object/filesystem.h>
+#include <kernel/object/iomgr.h>
 #include <kernel/object/object.h>
 #include <kernel/object/processor.h>
 
+extern void switch_to_user(void *req);
+extern int HalInitializePs2();
+
 void task1(){
+    char *x = KernelGetModule(0);
+    extern void *KernelLoadElfExecutable(uint8_t *ptr);
+    void *pe = KernelLoadElfExecutable(x);
+    switch_to_user(pe);
     while(1){
         asm("hlt");
     }
 }
 
 void task2(){
+    kprint("Hello from ring 0");
     while(1){
-        asm("hlt");
     }
 }
 
@@ -38,13 +46,11 @@ void KernelStart(){
     kprint("Phase 0 done!\n");
     HalInitializeInterrupts();
     kprint("Interrupts has been enabled.\n");
-    //HalInitializeProcessors();
-    KernelInitializeProcess(0);
-    KernelInitializeProcess(task1);
-    KernelInitializeProcess(task2);
-    HalEnableTimer();
-    HalUnmaskInterrupt(0);
-    HalMapInterrupt(0, 32);
+    HalInitializeProcessors();
+    //HalEnableTimer();
+    HalInitializePs2();
+    struct BlockDevice *ramdisk = IoCreateRamdisk(KernelGetModule(1), 512);
+    InitializeExt2FilesystemFromMemory(ramdisk);
     kprint("Timer has been enabled.\n");
     while(1) asm("hlt");
 }

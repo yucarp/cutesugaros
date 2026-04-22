@@ -8,8 +8,14 @@ char RamfsReadByte(struct FileObject *file, long offset){
     return file->data[offset];
 }
 
+void RamfsWriteByte(struct FileObject *file, long offset, char byte){
+    if(offset > file->size) return;
+    file->data[offset] = byte;
+}
+
 struct FileSystemFunctions ramfs_functions = {
-    (char (*)(struct FileObject *, long)) RamfsReadByte
+    (char (*)(struct FileObject *, long)) RamfsReadByte,
+    (void (*)(struct FileObject *, long, char)) RamfsWriteByte
 };
 
 struct FileObject *RamfsCreateFile(struct Directory *root, char *name, char *buffer, long size){

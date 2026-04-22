@@ -55,6 +55,11 @@ void kprint(char *str, ...){
                 case '%':
                     serial_send_data(*c++);
                     continue;
+                case 'c':
+                    num_str[0] = va_arg(arguments, int);
+                    putstr(num_str);
+                    ++c;
+                    continue;
                 case 'd':
                     int dec = va_arg(arguments, int);
                     itoa(dec, 10, num_str);

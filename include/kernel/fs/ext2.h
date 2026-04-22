@@ -1,1 +1,3 @@
-void InitializeExt2FilesystemFromMemory(char *buffer);
+#include <kernel/object/iomgr.h>
+
+void InitializeExt2FilesystemFromMemory(struct BlockDevice *bd);

@@ -11,3 +11,9 @@ reload_segments_final:
     mov %ax, %gs
     mov %ax, %ss
     ret
+
+.global flush_tss
+flush_tss:
+    mov $0x28, %ax
+    ltr %ax
+    ret

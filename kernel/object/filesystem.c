@@ -12,3 +12,7 @@ struct FileSystem *CreateFilesystem(struct Directory *root, struct FileSystemFun
 char ReadByte(struct FileObject *fo, long offset){
     return ((struct FileSystemFunctions *) fo->connected_fs)->read_char_function(fo, offset);
 }
+
+void WriteByte(struct FileObject *fo, long offset, char byte){
+    ((struct FileSystemFunctions *) fo->connected_fs)->write_char_function(fo, offset, byte);
+}

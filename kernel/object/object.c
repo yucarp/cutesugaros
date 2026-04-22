@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <kernel/kmalloc.h>
+#include <kernel/tokenmgr.h>
+#include <kernel/task.h>
 #include <kernel/object/object.h>
 #include <kernel/object/directory.h>
 
@@ -14,5 +16,6 @@ void InitializeObjectManager(){
 }
 
 struct Directory *ObjGetRootObject(){
-    return RootObject;
+    if(KernelCheckToken(GetCurrentProcessId(), 1)) return RootObject;
+    return 0;
 }
