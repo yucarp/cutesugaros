@@ -1,8 +1,9 @@
 #include <limine.h>
 #include <stdint.h>
 #include <string.h>
-#include <kernel/sbd.h>
+#include <kernel/mmu.h>
 #include <kernel/pci.h>
+#include <kernel/sbd.h>
 
 struct HBA_Port {
     uint32_t command_list_address;
@@ -201,7 +202,9 @@ void InitializeAhci(){
     pci_status_command |= pci_status << 16;
     KernelWritePciConfigDword(pci_object->bus, pci_object->device, pci_object->function, 0x4, pci_status_command);
     kprint("Memory bar: %x\n", pci_dev->base_address[5]);
-    struct HBA_MemoryRegister *bar5 = (void *)(((uint64_t)pci_dev->base_address[5] & 0xFFFFFFF0) | KernelGetHhdmOffset());
+    struct HBA_MemoryRegister *bar5 = (void *)(((uint64_t)pci_dev->base_address[5] & 0xFFFFFFF0));
+    KernelMapMmio((uint64_t) bar5, (uint64_t) bar5);
+    KernelMapMmio((uint64_t) bar5 + 0x1000, (uint64_t) bar5 + 0x1000);
     uint32_t port_implemented = bar5->port_implemented;
     for(int i = 0; i < 32; ++i){
         if(!(port_implemented & 1)) continue;
@@ -210,7 +213,7 @@ void InitializeAhci(){
         kprint("Found a device: %x\n", bar5->hba_port[i].signature);
         InitializeAhciPort(&bar5->hba_port[i], i);
         //AhciSendIdentify(&bar5->hba_port[i]);
-        kprint("Initialized the device\n");
+        kprint("Initialized the device: %x\n", bar5->hba_port[i].command_list_address);
         port_implemented >>= 1;
     }
 

@@ -68,6 +68,50 @@ void *KernelExpandHeap(){
     return (void *)(KernelAllocateFrame() + KernelGetHhdmOffset());
 }
 
+void KernelMapMmio(uint64_t virtual_address, uint64_t physical_address){
+    uintptr_t *root = kernel_pml4;
+    uint64_t value = 0x13;
+    uintptr_t pml4_index = (virtual_address >> 39) & 0x1FF;
+    uintptr_t hpd_index = (virtual_address >> 30) & 0x1FF;
+    uintptr_t lpd_index = (virtual_address >> 21) & 0x1FF;
+    uintptr_t pt_index = (virtual_address >> 12) & 0x1FF;
+
+    if(root == 0) return;
+
+    uint64_t hpd_address = root[pml4_index];
+
+    if(!(hpd_address & 1)){
+        hpd_address = KernelAllocateFrame();
+        memset((void *)(hpd_address | KernelGetHhdmOffset()), 0, 4096);
+        root[pml4_index] = hpd_address | value;
+    }
+
+    uint64_t *hpd = (void *) ((hpd_address & ~PAGE_ENTRY) | KernelGetHhdmOffset());
+
+    uint64_t lpd_address = hpd[hpd_index];
+
+    if(!(lpd_address & 1)){
+        lpd_address = KernelAllocateFrame();
+        memset((void *)(lpd_address | KernelGetHhdmOffset()), 0, 4096);
+        hpd[hpd_index] = lpd_address | value;
+    }
+
+    uint64_t *lpd = (void *) ((lpd_address & ~PAGE_ENTRY) | KernelGetHhdmOffset());
+
+    uint64_t pt_address = lpd[lpd_index];
+
+    if(!(pt_address & 1)){
+        pt_address = KernelAllocateFrame();
+        memset((void *)(pt_address | KernelGetHhdmOffset()), 0, 4096);
+        lpd[lpd_index] = pt_address | value;
+    }
+
+    uint64_t *pt = (void *)((pt_address & ~PAGE_ENTRY) | KernelGetHhdmOffset());
+
+    if(pt[pt_index] & 1) return;
+    pt[pt_index] = physical_address | value;
+}
+
 void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_address, char user){
     uint64_t value = user ? 7 : 3;
     uintptr_t pml4_index = (virtual_address >> 39) & 0x1FF;
