@@ -10,7 +10,7 @@ struct BlockDeviceFunctions ramdisk_functions = {
 };
 
 struct BlockDevice *IoCreateRamdisk(char* buffer, uint16_t block_size){
-    struct BlockDevice *new_ramdisk = IoCreateBlockDevice(&ramdisk_functions);
+    struct BlockDevice *new_ramdisk = IoCreateBlockDevice(&ramdisk_functions, "Ramdisk");
     new_ramdisk->specific_info = (uint64_t) buffer;
     new_ramdisk->block_size = block_size;
     return new_ramdisk;

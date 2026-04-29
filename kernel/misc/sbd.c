@@ -1,5 +1,6 @@
 #include <stdarg.h>
 #include <stdint.h>
+#include <string.h>
 #include <kernel/port.h>
 
 #define COM1_PORT 0x3F8
@@ -58,18 +59,21 @@ void kprint(char *str, ...){
                 case 'c':
                     num_str[0] = va_arg(arguments, int);
                     putstr(num_str);
+                    memset(num_str, 0, 65);
                     ++c;
                     continue;
                 case 'd':
                     int dec = va_arg(arguments, int);
                     itoa(dec, 10, num_str);
                     putstr(num_str);
+                    memset(num_str, 0, 65);
                     ++c;
                     continue;
                 case 'x':
                     int hex = va_arg(arguments, int);
                     itoa(hex, 16, num_str);
                     putstr(num_str);
+                    memset(num_str, 0, 65);
                     ++c;
                     continue;
             }

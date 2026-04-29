@@ -34,7 +34,7 @@ int KernelCheckToken(uint8_t permission){
     if(!id) return 1;
     extern struct Task *find_process(uint64_t id);
     struct Task *task = find_process(id);
-    if(((struct Token *)task->token)->can_access_root & permission == permission) return 1;
+    if((((struct Token *)task->token)->can_access_root & permission) == permission) return 1;
     kprint("Not enough privilege");
     return 0;
 }

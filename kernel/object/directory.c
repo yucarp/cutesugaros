@@ -1,6 +1,7 @@
 #include <string.h>
 #include <kernel/kmalloc.h>
 #include <kernel/sbd.h>
+#include <kernel/task.h>
 #include <kernel/object/directory.h>
 #include <kernel/object/object.h>
 
@@ -9,12 +10,6 @@ void str_slice(char *string, int start, int end, char *result){
     while(start <= end){
         result[n++] = string[start++];
     }
-}
-
-int strlen(char *str){
-    int n = 0;
-    while(str[n]) ++n;
-    return n;
 }
 
 void DirectoryAddChild(struct Directory *directory, struct ObjectHeader *object){
@@ -61,7 +56,8 @@ struct Directory *CreateDirectory(struct Directory *root, char *name){
 }
 
 struct ObjectHeader *ResolveObjectName(struct Directory *root, char *name){
-    if(!root || !name) return 0;
+    if(!name) return 0;
+    if(!root) {root = GetCurrentProcess()->cwd;}
     char obj_name[32] = {0};
     char remaining[256] = {0};
 
@@ -75,14 +71,13 @@ struct ObjectHeader *ResolveObjectName(struct Directory *root, char *name){
     str_slice(name, end + 1, strlen(name), remaining);
 
     if(!strncmp(obj_name, ".", 32)) {
-        return ResolveObjectName(root, remaining);
+        return ResolveObjectName(ObjGetRootObject(), remaining);
     }
 
     struct ObjectHeaderList *traversal = root->header_list;
 
     while(traversal){
         if(!strncmp(traversal->item->name, obj_name, 32)){
-            //kprint("Found the object!"); For debugging purposes
             break;
         }
         traversal = traversal->next;
@@ -97,4 +92,10 @@ struct ObjectHeader *ResolveObjectName(struct Directory *root, char *name){
     }
 
     return traversal->item;
+}
+
+int ChangeWorkingDirectory(struct Directory *root, char *name){
+    struct Directory *dir = (void *) ResolveObjectName(root, name);
+    if(dir) {GetCurrentProcess()->cwd = dir; return 0;}
+    else return -1;
 }

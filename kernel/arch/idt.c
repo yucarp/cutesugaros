@@ -1,10 +1,16 @@
 #include <stdint.h>
 #include <kernel/acpi.h>
+#include <kernel/elf.h>
 #include <kernel/idt.h>
+#include <kernel/mmu.h>
 #include <kernel/sbd.h>
+#include <kernel/spinlock.h>
+#include <kernel/object/directory.h>
+#include <kernel/object/filesystem.h>
+#include <kernel/object/iomgr.h>
 #include <kernel/task.h>
 
-#define SYSCALL_FUNCTION int (*)(int,  int)
+#define SYSCALL_FUNCTION uint64_t (*)(uint64_t, uint64_t, uint64_t, uint64_t)
 struct IDTEntry {
     uint16_t offset_low;
     uint16_t segment_selector;
@@ -22,9 +28,20 @@ struct IDTPointer {
 
 struct IDTEntry idt[256] = {0};
 struct IDTPointer idtp = {0, 0};
+struct Spinlock sp = {0};
 
 void (*irq_entries[16]) (struct x86Registers*) = {0};
-int (*syscall_entries[2]) (int, int) = {(SYSCALL_FUNCTION)GetCurrentProcessId, (SYSCALL_FUNCTION)KernelCloneProcess};
+uint64_t (*syscall_entries[9]) (uint64_t, uint64_t, uint64_t, uint64_t) = {
+    (SYSCALL_FUNCTION) GetCurrentProcessId,
+    (SYSCALL_FUNCTION) KernelCloneProcess,
+    (SYSCALL_FUNCTION) ResolveObjectName,
+    (SYSCALL_FUNCTION) ReadByte,
+    (SYSCALL_FUNCTION) WriteByte,
+    (SYSCALL_FUNCTION) IoWriteToCharDevice,
+    (SYSCALL_FUNCTION) KernelExpandHeap,
+    (SYSCALL_FUNCTION) ChangeWorkingDirectory,
+    (SYSCALL_FUNCTION) KernelLoadElfExecutable
+};
 
 void set_idt_entry(int index, uintptr_t handler, uint16_t segment_selector, uint8_t type, uint8_t ist){
     idt[index].offset_low = (handler & 0xFFFF);
@@ -53,8 +70,9 @@ void isr_handler(struct x86Registers *regs){
 }
 
 void syscall_handler_inner(struct x86Registers *regs){
-    if(regs->rax > 1) return;
-    syscall_entries[regs->rax](regs->rdi, regs->rsi);
+    if(regs->rax > 8) return;
+    if(regs->rax == 1){regs->rax = syscall_entries[regs->rax](regs->rip, regs->ursp, regs->rdx, regs->rcx);}
+    else regs->rax = syscall_entries[regs->rax](regs->rdi, regs->rsi, regs->rdx, regs->rcx);
 }
 
 void HalSetIrqEntry(int index, void *function){

@@ -22,6 +22,7 @@ struct FileObject *RamfsCreateFile(struct Directory *root, char *name, char *buf
     struct FileObject *new_fo = malloc(sizeof(struct FileObject));
     new_fo->size = size;
     memcpy(new_fo->header.name, name, 32);
+    new_fo->header.type = 5;
     new_fo->data = buffer;
     new_fo->connected_fs = &ramfs_functions;
     DirectoryAddChild(root, (void *) new_fo);

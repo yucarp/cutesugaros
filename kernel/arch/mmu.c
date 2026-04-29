@@ -1,11 +1,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <limine.h>
-#include <kernel/spinlock.h>
+#include <kernel/sbd.h>
 
 #define PAGE_SIZE 0x1000
 #define PAGE_ENTRY 0x80000000000001FF
-
 
 uintptr_t kernel_pml4[512]__attribute__((aligned(PAGE_SIZE))) = {0};
 
@@ -82,17 +81,17 @@ void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_
 
     if(!(hpd_address & 1)){
         hpd_address = KernelAllocateFrame();
+        memset((void *)(hpd_address | KernelGetHhdmOffset()), 0, 4096);
         root[pml4_index] = hpd_address | value;
     }
 
-    hpd_address |= KernelGetHhdmOffset();
-
-    uint64_t *hpd = (void *)((hpd_address & ~PAGE_ENTRY) | KernelGetHhdmOffset());
+    uint64_t *hpd = (void *) ((hpd_address & ~PAGE_ENTRY) | KernelGetHhdmOffset());
 
     uint64_t lpd_address = hpd[hpd_index];
 
     if(!(lpd_address & 1)){
         lpd_address = KernelAllocateFrame();
+        memset((void *)(lpd_address | KernelGetHhdmOffset()), 0, 4096);
         hpd[hpd_index] = lpd_address | value;
     }
 
@@ -102,6 +101,7 @@ void KernelMapPage(uintptr_t *root, uint64_t virtual_address, uint64_t physical_
 
     if(!(pt_address & 1)){
         pt_address = KernelAllocateFrame();
+        memset((void *)(pt_address | KernelGetHhdmOffset()), 0, 4096);
         lpd[lpd_index] = pt_address | value;
     }
 
@@ -145,8 +145,10 @@ int KernelUnmapPage(uintptr_t *root, uint64_t virtual_address){
     return 0;
 }
 
-uintptr_t *KernelNewPageStructure(){
+uintptr_t *KernelNewPageStructure(uintptr_t *old){
     uintptr_t *new_root = (void *)(KernelAllocateFrame() + KernelGetHhdmOffset());
+    memset(&new_root[0], 0, 2048);
+    if(old != 0) memcpy(&new_root[0], &old[0], 2048);
     memcpy(&new_root[256], &kernel_pml4[256], 2048);
     return new_root;
 }

@@ -1,12 +1,16 @@
 #include <limine.h>
 #include <string.h>
 #include <kernel/acpi.h>
+#include <kernel/dprintf.h>
+#include <kernel/elf.h>
 #include <kernel/gdt.h>
 #include <kernel/idt.h>
 #include <kernel/mmu.h>
+#include <kernel/pci.h>
 #include <kernel/sbd.h>
 #include <kernel/task.h>
 #include <kernel/fs/ext2.h>
+#include <kernel/fs/ramfs.h>
 #include <kernel/object/directory.h>
 #include <kernel/object/filesystem.h>
 #include <kernel/object/iomgr.h>
@@ -15,12 +19,12 @@
 
 extern void switch_to_user(void *req);
 extern int HalInitializePs2();
-
+extern void *search_for_modules(char *name);
 void task1(){
-    char *x = KernelGetModule(0);
-    extern void *KernelLoadElfExecutable(uint8_t *ptr);
-    void *pe = KernelLoadElfExecutable(x);
-    switch_to_user(pe);
+    struct FileObject *fo = (void *) ResolveObjectName(0, "./Shell");
+    void (*ptr) (void) = KernelLoadElfExecutable(fo);
+    kprint("%x", ptr);
+    if(ptr) switch_to_user(ptr);
     while(1){
         asm("hlt");
     }
@@ -42,15 +46,32 @@ void KernelStart(){
     kprint("Memory structures has been initialized.\n");
     InitializeObjectManager();
     KernelParseAcpi();
+    KernelInitializeSymbols();
     kprint("Platform specific structures has been initialized.\n");
     kprint("Phase 0 done!\n");
     HalInitializeInterrupts();
     kprint("Interrupts has been enabled.\n");
     HalInitializeProcessors();
-    //HalEnableTimer();
-    HalInitializePs2();
-    struct BlockDevice *ramdisk = IoCreateRamdisk(KernelGetModule(1), 512);
-    InitializeExt2FilesystemFromMemory(ramdisk);
+    char *vga_driver = KernelGetModule(2);
+    char *ahci_driver = KernelGetModule(3);
+    uintptr_t addr = KernelLoadElfLibrary(vga_driver);
+    KernelResolveElfRelocations(vga_driver, addr);
+    uintptr_t addr2 = KernelLoadElfLibrary(ahci_driver);
+    KernelResolveElfRelocations(ahci_driver, addr2);
+    KernelInitializeProcess(0, 1);
+    HalEnableTimer();
     kprint("Timer has been enabled.\n");
+    void (*VgaFramebufferInitialize) (void) = search_for_modules("VgaFramebufferInitialize");
+    if(VgaFramebufferInitialize) VgaFramebufferInitialize();
+    kprint("VGA initialized.\n");
+    HalInitializePci();
+    HalCheckPciBus(0);
+    void (*InitializeAhci) (void) = search_for_modules("InitializeAhci");
+    if(InitializeAhci) InitializeAhci();
+    else kprint("No AHCI module found");
+    HalInitializePs2();
+    //struct BlockDevice *ramdisk = IoCreateRamdisk(KernelGetModule(1), 512);
+    //InitializeExt2FilesystemFromMemory(ramdisk);
+
     while(1) asm("hlt");
 }

@@ -170,16 +170,33 @@ switch_to_user:
 
 	iretq
 
+.global resume_user
+resume_user:
+	popq %r15
+	popq %r14
+	popq %r13
+	popq %r12
+	popq %r11
+	popq %r10
+	popq %r9
+	popq %r8
+    popq %rdi
+	popq %rsi
+	popq %rbp
+	popq %rdx
+	popq %rcx
+	popq %rbx
+	popq %rax
+
+	add $16, %rsp
+
+	swapgs
+	iretq
+
 .global syscall_handler
 syscall_handler:
 	swapgs
 	mov %rsp, %gs:0x78
-
-	pushq $0x23
-	pushq %gs:0x78
-	pushfq
-	pushq $0x2b
-	push %rdi
 
 	pushq $0
 	pushq $0
@@ -211,7 +228,7 @@ syscall_handler:
 	popq %r10
 	popq %r9
 	popq %r8
-    add $8, %rsp
+    popq %rdi
 	popq %rsi
 	popq %rbp
 	popq %rdx
@@ -220,11 +237,6 @@ syscall_handler:
 	popq %rax
 
 	add $16, %rsp
-
-	pop %rdi
-	add $8, %rsp
-	popfq
-	pop %rsp
 
 	swapgs
 	iretq

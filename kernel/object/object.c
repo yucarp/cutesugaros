@@ -16,6 +16,6 @@ void InitializeObjectManager(){
 }
 
 struct Directory *ObjGetRootObject(){
-    if(KernelCheckToken(GetCurrentProcessId(), 1)) return RootObject;
+    if(KernelCheckToken(1)) return RootObject;
     return 0;
 }

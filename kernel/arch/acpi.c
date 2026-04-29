@@ -198,7 +198,7 @@ void HalEnableTimer(){
     write_lapic(0xF0, 0x127);
     write_lapic(0x320, 0x20020);
     write_lapic(0x3E0, 0x3);
-    write_lapic(0x380, 12000);
+    write_lapic(0x380, 100000);
 
     HalSetIrqEntry(0, KernelSwitchProcess);
     HalMapInterrupt(0, 32);

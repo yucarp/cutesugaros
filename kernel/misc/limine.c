@@ -59,3 +59,8 @@ void *KernelGetModule(int number){
     if(module_request.response->module_count < number) return 0;
     return module_request.response->modules[number]->address;
 }
+
+struct limine_framebuffer *KernelGetFramebuffer(){
+    if(!framebuffer_request.response) return 0;
+    return framebuffer_request.response->framebuffers[0];
+}
