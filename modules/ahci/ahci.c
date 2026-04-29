@@ -91,24 +91,31 @@ void InitializeAhciPort(struct HBA_Port *port, int port_num){
     port->command_and_status &= ~0x1;
     port->command_and_status &= ~0x10;
 
+    uintptr_t ahci_base = KernelAllocateFrame();
+
+    for(int i = 0; i < 0x40000; i += 0x1000){
+        KernelMapMmio(ahci_base + i, ahci_base + i);
+        if(KernelAllocateFrame() != ahci_base + i + 0x1000) break;
+    }
+
     while(1){
         if((port->command_and_status & 0x4000) || (port->command_and_status & 0x8000)) continue;
         break;
     }
 
-    uintptr_t command_port_address = 0x400000 + (port_num << 10) + KernelGetHhdmOffset();
-    port->command_list_address = 0x400000 + (port_num << 10);
+    uintptr_t command_port_address = ahci_base + (port_num << 10) + KernelGetHhdmOffset();
+    port->command_list_address = ahci_base + (port_num << 10);
     port->cla_upper = 0;
 
-    uintptr_t fis_address = 0x400000 + (32 << 10) + (port_num << 8) + KernelGetHhdmOffset();
-    port->fis_address = 0x400000 + (32 << 10) + (port_num << 8);
+    uintptr_t fis_address = ahci_base + (32 << 10) + (port_num << 8) + KernelGetHhdmOffset();
+    port->fis_address = ahci_base + (32 << 10) + (port_num << 8);
     port->fis_upper = 0;
     memset((void *)fis_address, 0, 256);
 
     struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(command_port_address);
     for(int i = 0; i < 32; ++i){
         command_header[i].prd_table_length = 8;
-        command_header[i].ctd_base_address = 0x400000 + (40 << 10) + (port_num << 13) + (i << 8);
+        command_header[i].ctd_base_address = ahci_base + (40 << 10) + (port_num << 13) + (i << 8);
         command_header[i].ctd_base_upper = 0;
         uintptr_t ctd = command_header[i].ctd_base_address + KernelGetHhdmOffset();
         memset((void *)ctd, 0, 256);
@@ -197,6 +204,7 @@ void InitializeAhci(){
     uint32_t pci_status_command = KernelReadPciConfigWord(pci_object->bus, pci_object->device, pci_object->function, 0x4);
     pci_status_command |= 0x1;
     pci_status_command |= 0x2;
+    pci_status_command |= 0x4;
     pci_status_command &= ~(1 << 10);
     uint32_t pci_status = KernelReadPciConfigWord(pci_object->bus, pci_object->device, pci_object->function, 0x6);
     pci_status_command |= pci_status << 16;
@@ -212,7 +220,7 @@ void InitializeAhci(){
         if((bar5->hba_port[i].sata_status & 0x0F) != 0x03) continue;
         kprint("Found a device: %x\n", bar5->hba_port[i].signature);
         InitializeAhciPort(&bar5->hba_port[i], i);
-        //AhciSendIdentify(&bar5->hba_port[i]);
+        AhciSendIdentify(&bar5->hba_port[i]);
         kprint("Initialized the device: %x\n", bar5->hba_port[i].command_list_address);
         port_implemented >>= 1;
     }

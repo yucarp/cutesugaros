@@ -115,6 +115,7 @@ void KernelInitializeSymbols(){
     add_to_symbols(KernelWritePciConfigDword, "KernelWritePciConfigDword");
     add_to_symbols(KernelReadPciConfigWord, "KernelReadPciConfigWord");
     add_to_symbols(KernelMapMmio, "KernelMapMmio");
+    add_to_symbols(KernelAllocateFrame, "KernelAllocateFrame");
 }
 
 uintptr_t KernelLoadElfLibrary(uint8_t *ptr){

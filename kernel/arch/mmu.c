@@ -6,6 +6,9 @@
 #define PAGE_SIZE 0x1000
 #define PAGE_ENTRY 0x80000000000001FF
 
+#define PAT_FIRST 0x8
+#define PAT_SECOND 0x10
+
 uintptr_t kernel_pml4[512]__attribute__((aligned(PAGE_SIZE))) = {0};
 
 uintptr_t kernel_hpd[512]__attribute__((aligned(PAGE_SIZE))) = {0};
@@ -70,7 +73,7 @@ void *KernelExpandHeap(){
 
 void KernelMapMmio(uint64_t virtual_address, uint64_t physical_address){
     uintptr_t *root = kernel_pml4;
-    uint64_t value = 0x13;
+    uint64_t value = PAT_FIRST | PAT_SECOND | 0x3;
     uintptr_t pml4_index = (virtual_address >> 39) & 0x1FF;
     uintptr_t hpd_index = (virtual_address >> 30) & 0x1FF;
     uintptr_t lpd_index = (virtual_address >> 21) & 0x1FF;
