@@ -224,7 +224,7 @@ void InitializeAhci(){
     pci_status_command |= pci_status << 16;
     KernelWritePciConfigDword(pci_object->bus, pci_object->device, pci_object->function, 0x4, pci_status_command);
     kprint("Memory bar: %x\n", pci_dev->base_address[5]);
-    struct HBA_MemoryRegister *bar5 = (void *)(((uint64_t)pci_dev->base_address[5] & 0xFFFFFFF0));
+    volatile struct HBA_MemoryRegister *bar5 = (void *)(((uint64_t)pci_dev->base_address[5] & 0xFFFFFFF0));
     KernelMapMmio((uint64_t) bar5, (uint64_t) bar5);
     KernelMapMmio((uint64_t) bar5 + 0x1000, (uint64_t) bar5 + 0x1000);
     uint32_t port_implemented = bar5->port_implemented;
@@ -239,7 +239,7 @@ void InitializeAhci(){
         port_implemented >>= 1;
     }
 
-    bar5->global_host_control |= 0x1; //Reset the device
-    bar5->global_host_control |= 0x2; //Enable interrupts
-    bar5->global_host_control |= 1 << 31; //Enable AHCI mode;
+    *((volatile uint32_t *)(&bar5->global_host_control)) |= 0x1; //Reset the device
+    *((volatile uint32_t *)(&bar5->global_host_control)) |= 0x2; //Enable interrupts
+    *((volatile uint32_t *)(&bar5->global_host_control)) |= 1 << 31; //Enable AHCI mode;
 }
