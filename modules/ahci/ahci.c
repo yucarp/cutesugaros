@@ -217,12 +217,10 @@ void AhciReadSector(struct HBA_Port *port, uint64_t start, uint16_t *buffer){
     struct HBA_Command_Table *command_table = (struct HBA_Command_Table *)(command_header->ctd_base_address);
     memset(command_table, 0, sizeof(struct HBA_Command_Table) + sizeof(struct HBA_Physical_Region_Descriptor_Entry));
 
-    for(int i = 0; i < command_header->prd_table_length; ++i) {
-        command_table->hda_prdt[i].data_base_address = (uint64_t )&buffer & 0xFFFFFFFF;
-        command_table->hda_prdt[i].data_base_upper = ((uint64_t )&buffer  >> 32) & 0xFFFFFFFF;
-        command_table->hda_prdt[i].byte_count_and_interrupt_on_completion |= 511;
-        command_table->hda_prdt[i].byte_count_and_interrupt_on_completion |= (1 << 31);
-    }
+    command_table->hda_prdt[0].data_base_address = (uint64_t )&buffer & 0xFFFFFFFF;
+    command_table->hda_prdt[0].data_base_upper = ((uint64_t )&buffer  >> 32) & 0xFFFFFFFF;
+    command_table->hda_prdt[0].byte_count_and_interrupt_on_completion |= 511;
+    command_table->hda_prdt[0].byte_count_and_interrupt_on_completion |= (1 << 31);
 
     struct FIS_Register_H2D *command_fis = (struct FIS_Register_H2D *)(&command_table->command_fis);
     command_fis->fis_type = 0x27;
@@ -244,11 +242,9 @@ void AhciReadSector(struct HBA_Port *port, uint64_t start, uint16_t *buffer){
         return;
     }
 
-    struct FIS_Register_Data fis_pio = {0};
-    memcpy(&fis_pio, (void *)((uint64_t)port->fis_address + 0x40), 0x14);
-    kprint("FIS type: %x\n", fis_pio.fis_type);
-
     while(port->task_file_data & (0x88));
+
+    port->command_issue = 1 << slot;
 
     for(int i = 0; i < 256; ++i){
         if(buffer[i]) kprint("Num %d: %x\n", i, buffer[i]);
@@ -285,7 +281,8 @@ void InitializeAhci(){
         if((bar5->hba_port[i].sata_status & 0x0F) != 0x03) continue;
         kprint("Found a device: %x\n", bar5->hba_port[i].signature);
         InitializeAhciPort(&bar5->hba_port[i], i);
-        AhciSendIdentify(&bar5->hba_port[i]);
+        //AhciSendIdentify(&bar5->hba_port[i]);
+        AhciReadSector(&bar5->hba_port[i], 3, buffer);
         kprint("Initialized the device: %x\n", bar5->hba_port[i].command_list_address);
         port_implemented >>= 1;
     }
@@ -293,6 +290,5 @@ void InitializeAhci(){
 
     *((volatile uint32_t *)(&bar5->global_host_control)) |= 0x2; //Enable interrupts
     *((volatile uint32_t *)(&bar5->global_host_control)) |= 1 << 31; //Enable AHCI mode;
-    AhciReadSector(&bar5->hba_port[0], 2, buffer);
     asm("hlt");
 }
