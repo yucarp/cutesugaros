@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+#define MMIO_OFFSET 0xFFFFE00000000000
 void KernelInitializePaging();
 void *KernelExpandHeap();
 uintptr_t KernelAllocateFrame();
