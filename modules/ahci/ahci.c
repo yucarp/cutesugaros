@@ -4,7 +4,7 @@
 #include <kernel/mmu.h>
 #include <kernel/pci.h>
 #include <kernel/sbd.h>
-
+#include <kernel/object/iomgr.h>
 struct HBA_Port {
     volatile uint32_t command_list_address;
     volatile uint32_t cla_upper;
@@ -132,6 +132,21 @@ struct FIS_Register_Data {
 };
 
 static volatile uint16_t *sata_buffer = 0;
+static uintptr_t address = 0;
+static volatile struct HBA_MemoryRegister *bar5 = 0;
+
+void itoa(uint64_t num, int base, char *str){
+    uint64_t count = num;
+    char *digits = "0123456789ABCDEF";
+    int len = 0;
+    do{
+        ++len;
+    } while(count /= base);
+
+    do{
+        str[--len] = digits[num % base];
+    } while(num /= base);
+}
 
 void InitializeAhciPort(struct HBA_Port *port, int port_num){
     port->command_and_status &= ~0x1;
@@ -181,11 +196,11 @@ int AhciFindFreeCommandSlot(struct HBA_Port *port){
     return -1;
 }
 
-void AhciSendIdentify(struct HBA_Port *port){
+uint16_t *AhciSendIdentify(struct HBA_Port *port){
     memset(sata_buffer, 0, 1024);
     port->interrupt_status = 0xFFFFFFFF;
     int slot = AhciFindFreeCommandSlot(port);
-    if(slot == -1) return;
+    if(slot == -1) return 0;
 
     struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address + MMIO_OFFSET);
     command_header += slot;
@@ -207,7 +222,7 @@ void AhciSendIdentify(struct HBA_Port *port){
 
     if(port->task_file_data & 0x1){
         kprint("An error occured");
-        return;
+        return 0;
     }
 
     while(port->task_file_data & (0x88));
@@ -215,20 +230,18 @@ void AhciSendIdentify(struct HBA_Port *port){
 
     struct FIS_Register_PIO fis_pio = {0};
     memcpy(&fis_pio, (void *)((uint64_t)port->fis_address + MMIO_OFFSET + 0x20), 0x14);
-    kprint("FIS type: %x\n", fis_pio.fis_type);
-    kprint("FIS error: %x\n", fis_pio.error);
+
     while(port->command_issue & (1 << slot));
-    for(int i = 0; i < 256; ++i){
-        if(sata_buffer[i]) kprint("Num %d: %x\n", i, sata_buffer[i]);
-    }
+
+    return sata_buffer;
 
 }
 
-void AhciReadSector(struct HBA_Port *port, uint64_t start){
+uint16_t * AhciReadSectorInner(struct HBA_Port *port, uint64_t start){
     memset(sata_buffer, 0, 1024);
     port->interrupt_status = 0xFFFFFFFF;
     int slot = AhciFindFreeCommandSlot(port);
-    if (slot == -1) return;
+    if (slot == -1) return sata_buffer;
 
     struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address + MMIO_OFFSET);
     command_header += slot;
@@ -239,14 +252,14 @@ void AhciReadSector(struct HBA_Port *port, uint64_t start){
     struct HBA_Command_Table *command_table = (struct HBA_Command_Table *)(command_header->ctd_base_address + MMIO_OFFSET);
     memset(command_table, 0, sizeof(struct HBA_Command_Table) + sizeof(struct HBA_Physical_Region_Descriptor_Entry));
 
-    command_table->hda_prdt[0].data_base_address = (uint64_t)&sata_buffer & 0xFFFFFFFF;
+    command_table->hda_prdt[0].data_base_address = (uint64_t)sata_buffer & 0xFFFFFFFF;
     command_table->hda_prdt[0].byte_count_and_interrupt_on_completion |= 511;
-    command_table->hda_prdt[0].byte_count_and_interrupt_on_completion |= (1 << 31);
+    command_table->hda_prdt[0].byte_count_and_interrupt_on_completion &= ~(1 << 31);
 
     struct FIS_Register_H2D *command_fis = (struct FIS_Register_H2D *)(&command_table->command_fis);
     command_fis->fis_type = 0x27;
     command_fis->multiplier_and_cc |= 1 << 7;
-    command_fis->command = 0x20;
+    command_fis->command = 0x25;
 
     command_fis->lba0 = (uint8_t)start;
     command_fis->lba1 = (uint8_t)(start >> 8);
@@ -256,30 +269,48 @@ void AhciReadSector(struct HBA_Port *port, uint64_t start){
     command_fis->lba5 = (uint8_t)(start >> 40);
     command_fis->count = 1;
 
-    command_fis->device = 0;
+    command_fis->device = 1 << 6;
 
     while(port->task_file_data & (0x88));
     port->command_issue = 1 << slot;
 
-    if(port->task_file_data & 0x1){
-        kprint("An error occured");
-        return;
+    while(port->command_issue & (1 << slot)){
+        if(port->task_file_data & 0x1){
+            kprint("An error occured\n");
+            return sata_buffer;
+        }
     }
 
     while(port->command_issue & (1 << slot));
-    kprint("Command sent\n");
 
-    struct FIS_Register_PIO fis_pio = {0};
-    memcpy(&fis_pio, (void *)((uint64_t)port->fis_address + MMIO_OFFSET + 0x20), 0x14);
-    kprint("FIS type: %x\n", fis_pio.fis_type);
-    kprint("FIS error: %x\n", fis_pio.error);
+    struct FIS_Register_D2H fis_d2h = {0};
+    memcpy(&fis_d2h, (void *)((uint64_t)port->fis_address + MMIO_OFFSET + 0x40), 0x14);
 
-    for(int i = 0; i < 256; ++i){
-        if(sata_buffer[i]) kprint("Num %d: %x\n", i, sata_buffer[i]);
-    }
+    return sata_buffer;
 }
 
-void InitializeAhci(){
+char * AhciReadSector(struct BlockDevice *sata_device, long offset){
+    return (char *) AhciReadSectorInner(&(bar5->hba_port[sata_device->specific_info]), offset);
+}
+
+static struct BlockDeviceFunctions ahci_functions = {
+    0
+};
+
+void AhciAddDevice(int port){
+    char sata_identifier[14] = "SataDevice";
+    char numstr[3] = {0};
+    itoa(port, 10, numstr);
+    strcat(sata_identifier, numstr);
+    ahci_functions.read = &AhciReadSector;
+    struct BlockDevice *bd = IoCreateBlockDevice((void *) (((uint64_t) &ahci_functions)), sata_identifier);
+    bd->specific_info = port;
+    bd->block_size = 512;
+    uint16_t *identify_data = AhciSendIdentify(&bar5->hba_port[port]);
+}
+
+void InitializeAhci(uintptr_t address){
+    address = address;
     struct PCIObject *pci_object = HalSearchForPciDevice(0x1, 0x6, 0);
     if(!pci_object){
         kprint("No device");
@@ -288,15 +319,13 @@ void InitializeAhci(){
     struct PCIDevice *pci_dev = (struct PCIDevice *)(pci_object->pci_information);
 
     uint16_t buffer[256] = {0};
-    kprint("Initializing AHCI...\n");
     uint32_t pci_status_command = KernelReadPciConfigWord(pci_object->bus, pci_object->device, pci_object->function, 0x4);
     pci_status_command |= 0x7;
     pci_status_command &= ~(1 << 10);
     uint32_t pci_status = KernelReadPciConfigWord(pci_object->bus, pci_object->device, pci_object->function, 0x6);
     pci_status_command |= pci_status << 16;
     KernelWritePciConfigDword(pci_object->bus, pci_object->device, pci_object->function, 0x4, pci_status_command);
-    kprint("Memory bar: %x\n", pci_dev->base_address[5]);
-    volatile struct HBA_MemoryRegister *bar5 = (void *)(((uint64_t)pci_dev->base_address[5] & 0xFFFFFFF0));
+    bar5 = (void *)(((uint64_t)pci_dev->base_address[5] & 0xFFFFFFF0));
     KernelMapMmio((uint64_t) bar5, (uint64_t) bar5);
     KernelMapMmio((uint64_t) bar5 + 0x1000, (uint64_t) bar5 + 0x1000);
     uint32_t port_implemented = bar5->port_implemented;
@@ -306,14 +335,10 @@ void InitializeAhci(){
         if((bar5->hba_port[i].sata_status & 0x0F) != 0x03) { port_implemented >>= 1; continue; }
         kprint("Found a device: %x\n", bar5->hba_port[i].signature);
         InitializeAhciPort(&bar5->hba_port[i], i);
-        AhciSendIdentify(&bar5->hba_port[i]);
-        AhciReadSector(&bar5->hba_port[i], 3);
-        kprint("Initialized the device: %x\n", bar5->hba_port[i].command_list_address);
+        AhciAddDevice(i);
         port_implemented >>= 1;
     }
 
     *((volatile uint32_t *)(&bar5->global_host_control)) |= 0x2; //Enable interrupts
     *((volatile uint32_t *)(&bar5->global_host_control)) |= 1 << 31; //Enable AHCI mode;
-
-    asm("hlt");
 }
