@@ -131,14 +131,14 @@ struct FIS_Register_Data {
     volatile uint32_t data[1];
 };
 
-static uint16_t *sata_buffer = 0;
+static volatile uint16_t *sata_buffer = 0;
 
 void InitializeAhciPort(struct HBA_Port *port, int port_num){
     port->command_and_status &= ~0x1;
     port->command_and_status &= ~0x10;
 
     uintptr_t ahci_base = KernelAllocateFrame();
-    KernelMapMmio(ahci_base, ahci_base);
+    KernelMapMmio(ahci_base + MMIO_OFFSET, ahci_base);
 
     while(1){
         if((port->command_and_status & 0x4000) || (port->command_and_status & 0x8000)) continue;
@@ -147,24 +147,25 @@ void InitializeAhciPort(struct HBA_Port *port, int port_num){
 ;
     port->command_list_address = KernelAllocateFrame();
     port->cla_upper = 0;
-    KernelMapMmio(port->command_list_address, port->command_list_address);
+    KernelMapMmio(port->command_list_address + MMIO_OFFSET, port->command_list_address);
     port->fis_address = KernelAllocateFrame();
-    KernelMapMmio(port->fis_address, port->fis_address);
+    KernelMapMmio(port->fis_address + MMIO_OFFSET, port->fis_address);
     port->fis_upper = 0;
-    memset((void *)port->fis_address, 0, 256);
+    memset((void *)(port->fis_address + MMIO_OFFSET), 0, 256);
 
-    struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address);
+
+    struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address + MMIO_OFFSET);
     for(int i = 0; i < 32; ++i){
         command_header[i].prd_table_length = 8;
         command_header[i].ctd_base_address = KernelAllocateFrame();
-        KernelMapMmio(command_header[i].ctd_base_address, command_header[i].ctd_base_address);
+        KernelMapMmio(command_header[i].ctd_base_address + MMIO_OFFSET, command_header[i].ctd_base_address);
         command_header[i].ctd_base_upper = 0;
         uintptr_t ctd = command_header[i].ctd_base_address;
-        memset((void *)ctd, 0, 256);
+        memset((void *)(ctd + MMIO_OFFSET), 0, 256);
     }
 
-    sata_buffer = (void *)KernelAllocateFrame();
-    KernelMapMmio((uint64_t)sata_buffer, (uint64_t) sata_buffer);
+    sata_buffer = (void *)(KernelAllocateFrame() + MMIO_OFFSET);
+    KernelMapMmio((uint64_t)sata_buffer, ((uint64_t) sata_buffer) - MMIO_OFFSET);
     while(port->command_and_status & 0x8000);
 
     port->command_and_status |= 0x1;
@@ -181,27 +182,27 @@ int AhciFindFreeCommandSlot(struct HBA_Port *port){
 }
 
 void AhciSendIdentify(struct HBA_Port *port){
+    memset(sata_buffer, 0, 1024);
     port->interrupt_status = 0xFFFFFFFF;
     int slot = AhciFindFreeCommandSlot(port);
     if(slot == -1) return;
 
-    struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address);
+    struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address + MMIO_OFFSET);
     command_header += slot;
     command_header->header_1 |= (sizeof(struct FIS_Register_H2D) / sizeof(uint32_t)) & 0x1F;
     command_header->header_1 &= ~(1 << 6);
     command_header->prd_table_length = 1;
-    struct HBA_Command_Table *command_table = (struct HBA_Command_Table *)(command_header->ctd_base_address);
+    struct HBA_Command_Table *command_table = (struct HBA_Command_Table *)(command_header->ctd_base_address + MMIO_OFFSET);
     memset(command_table, 0, sizeof(struct HBA_Command_Table) + sizeof(struct HBA_Physical_Region_Descriptor_Entry));
 
-    command_table->hda_prdt[0].data_base_address = (uint64_t) &sata_buffer & 0xFFFFFFFF;
+    command_table->hda_prdt[0].data_base_address = (uint64_t) (sata_buffer) - MMIO_OFFSET & 0xFFFFFFFF;
     command_table->hda_prdt[0].byte_count_and_interrupt_on_completion |= 511;
     command_table->hda_prdt[0].byte_count_and_interrupt_on_completion |= (1 << 31);
 
-    struct FIS_Register_H2D *command_fis = (struct FIS_Register_H2D *)(&command_table->command_fis);
+    struct FIS_Register_H2D *command_fis = (struct FIS_Register_H2D *)((uint64_t)&command_table->command_fis);
     command_fis->fis_type = 0x27;
     command_fis->multiplier_and_cc |= 1 << 7;
     command_fis->command = 0xEC;
-
     command_fis->device = 0;
 
     if(port->task_file_data & 0x1){
@@ -212,11 +213,10 @@ void AhciSendIdentify(struct HBA_Port *port){
     while(port->task_file_data & (0x88));
     port->command_issue = 1 << slot;
 
-    struct FIS_Register_Data fis_pio = {0};
-
-    memcpy(&fis_pio, (void *)((uint64_t)port->fis_address + 0x20), 0x14);
+    struct FIS_Register_PIO fis_pio = {0};
+    memcpy(&fis_pio, (void *)((uint64_t)port->fis_address + MMIO_OFFSET + 0x20), 0x14);
     kprint("FIS type: %x\n", fis_pio.fis_type);
-
+    kprint("FIS error: %x\n", fis_pio.error);
     while(port->command_issue & (1 << slot));
     for(int i = 0; i < 256; ++i){
         if(sata_buffer[i]) kprint("Num %d: %x\n", i, sata_buffer[i]);
@@ -225,17 +225,18 @@ void AhciSendIdentify(struct HBA_Port *port){
 }
 
 void AhciReadSector(struct HBA_Port *port, uint64_t start){
+    memset(sata_buffer, 0, 1024);
     port->interrupt_status = 0xFFFFFFFF;
     int slot = AhciFindFreeCommandSlot(port);
     if (slot == -1) return;
 
-    struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address);
+    struct HBA_Command_Header *command_header = (struct HBA_Command_Header *)(port->command_list_address + MMIO_OFFSET);
     command_header += slot;
     command_header->header_1 |= (sizeof(struct FIS_Register_H2D) / sizeof(uint32_t)) & 0x1F;
     command_header->header_1 &= ~(1 << 6);
     command_header->prd_table_length = 1;
 
-    struct HBA_Command_Table *command_table = (struct HBA_Command_Table *)(command_header->ctd_base_address);
+    struct HBA_Command_Table *command_table = (struct HBA_Command_Table *)(command_header->ctd_base_address + MMIO_OFFSET);
     memset(command_table, 0, sizeof(struct HBA_Command_Table) + sizeof(struct HBA_Physical_Region_Descriptor_Entry));
 
     command_table->hda_prdt[0].data_base_address = (uint64_t)&sata_buffer & 0xFFFFFFFF;
@@ -257,6 +258,7 @@ void AhciReadSector(struct HBA_Port *port, uint64_t start){
 
     command_fis->device = 0;
 
+    while(port->task_file_data & (0x88));
     port->command_issue = 1 << slot;
 
     if(port->task_file_data & 0x1){
@@ -267,15 +269,14 @@ void AhciReadSector(struct HBA_Port *port, uint64_t start){
     while(port->command_issue & (1 << slot));
     kprint("Command sent\n");
 
-    struct FIS_Register_Data fis_pio = {0};
-    memcpy(&fis_pio, (void *)((uint64_t)port->fis_address + 0x20), 64);
+    struct FIS_Register_PIO fis_pio = {0};
+    memcpy(&fis_pio, (void *)((uint64_t)port->fis_address + MMIO_OFFSET + 0x20), 0x14);
     kprint("FIS type: %x\n", fis_pio.fis_type);
+    kprint("FIS error: %x\n", fis_pio.error);
 
     for(int i = 0; i < 256; ++i){
         if(sata_buffer[i]) kprint("Num %d: %x\n", i, sata_buffer[i]);
     }
-
-    while(1) asm("hlt");
 }
 
 void InitializeAhci(){
@@ -306,7 +307,7 @@ void InitializeAhci(){
         kprint("Found a device: %x\n", bar5->hba_port[i].signature);
         InitializeAhciPort(&bar5->hba_port[i], i);
         AhciSendIdentify(&bar5->hba_port[i]);
-        //AhciReadSector(&bar5->hba_port[0], 4, buffer);
+        AhciReadSector(&bar5->hba_port[i], 3);
         kprint("Initialized the device: %x\n", bar5->hba_port[i].command_list_address);
         port_implemented >>= 1;
     }
