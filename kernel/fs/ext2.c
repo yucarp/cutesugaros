@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <kernel/kmalloc.h>
-#include <kernel/sbd.h>
+#include <kernel/dprintf.h>
 #include <kernel/object/directory.h>
 #include <kernel/object/filesystem.h>
 #include <kernel/object/iomgr.h>
@@ -83,19 +83,16 @@ struct Inode *ReadInode(struct FileSystem *fs, long index);
 void CreateDirectoryEntry(struct Directory *root, struct FileSystem *fs, long index);
 char Ext2ReadByte(struct FileObject *fo, long offset);
 
-struct FileSystem *InitializeExt2FilesystemFromMemory(struct BlockDevice *bd){
+struct FileSystem *InitializeExt2FilesystemFromBlockDevice(struct BlockDevice *bd){
     struct FileSystem *fs = malloc(sizeof(struct FileSystem));
     fs->block_device = bd;
     long block_location = 1024 / bd->block_size;
-    struct Ext2Superblock *superblock = (void *)(IoReadFromBlockDevice(bd, block_location));
+    struct Ext2Superblock *superblock = malloc(0x1000);
+    memcpy(superblock, (void *)(IoReadFromBlockDevice(bd, block_location)), 512);
     fs->fs_data = superblock;
-    if(superblock->signature != 0xEF53) kprint("Not an Ext2 FS");
-    else kprint("Is an Ext2 FS\n");
+    if(superblock->signature != 0xEF53){ dprintf("Not an Ext2 FS\n"); return 0;}
+    else dprintf("Is an Ext2 FS\n");
     CreateDirectoryEntry(ObjGetRootObject(), fs, 2);
-    struct FileObject *fo = (void *) ResolveObjectName(ObjGetRootObject(), "./programs/test.txt");
-    if(fo){
-        Ext2ReadByte(fo, 0);
-    }
     return fs;
 }
 
@@ -103,20 +100,26 @@ struct Inode *ReadInode(struct FileSystem *fs, long index){
     if(index < 1) return 0;
     struct Ext2Superblock *superblock = fs->fs_data;
     uint32_t block_size = (1024 << superblock->block_size);
-    struct BlockGroupDescriptor *bgd_table = (void *) ((uint8_t *)IoReadFromBlockDevice(fs->block_device, 2048 / fs->block_device->block_size));
+    struct BlockGroupDescriptor *bgd_table = malloc(512);
+     memcpy((void *)((uint64_t)bgd_table), (void *)IoReadFromBlockDevice(fs->block_device, 2048 / fs->block_device->block_size), 512);
     bgd_table += (index - 1) / superblock->blockgroup_inode_number;
 
     long location = bgd_table->inode_table_block_location * block_size / fs->block_device->block_size;
-    struct Inode *inode_table = (void *) (IoReadFromBlockDevice(fs->block_device, location));
-    inode_table = (void *)((char *)inode_table + (((index - 1) % superblock->blockgroup_inode_number) * superblock->inode_size));
+    struct Inode *inode_table = malloc(0x4000);
 
+    for(int i = 0; i < 32; ++i){
+        memcpy((void *)((uint64_t)inode_table + i * 512), (void *)(IoReadFromBlockDevice(fs->block_device, location + i)), 512);
+    }
+
+    inode_table = (void *)((char *)inode_table + (((index - 1) % superblock->blockgroup_inode_number) * superblock->inode_size));
     return inode_table;
 }
 
 
 void CreateDirectoryEntry(struct Directory *root, struct FileSystem *fs, long index){
     struct Inode *directory_inode = ReadInode(fs, index);
-    if(!(directory_inode->type_and_permissions & 0x4000)){ kprint("Not a directory entry"); return;}
+    if(!directory_inode) return;
+    if(!(directory_inode->type_and_permissions & 0x4000)){ dprintf("Not a directory entry\n"); return;}
 
     struct Ext2Superblock *superblock = fs->fs_data;
     uint32_t block_size = 1024 << superblock->block_size;
@@ -124,8 +127,9 @@ void CreateDirectoryEntry(struct Directory *root, struct FileSystem *fs, long in
     for(int i = 0; i < 12; ++i){
         if(directory_inode->direct_block_pointers[i]){
             for(int count = 0; count < block_size / fs->block_device->block_size; ++count){
-            long location = directory_inode->direct_block_pointers[i] * block_size / fs->block_device->block_size + count;
-            struct DirectoryEntry *dir_entry = (void *)(IoReadFromBlockDevice(fs->block_device, location));
+            long location = (directory_inode->direct_block_pointers[i] * block_size / fs->block_device->block_size) + count;
+            struct DirectoryEntry *dir_entry = malloc(0x800);
+            memcpy(dir_entry, (void *)(IoReadFromBlockDevice(fs->block_device, location)), 512);
             int index = count * fs->block_device->block_size;
             while(index < (count + 1) * fs->block_device->block_size){
                 if(dir_entry->name_character){
@@ -172,7 +176,7 @@ char Ext2ReadByte(struct FileObject *fo, long offset){
     if(block > 11) return 0;
 
     long location = file_inode->direct_block_pointers[block] * block_size / ((struct FileSystem *)(fo->connected_fs))->block_device->block_size;
-    char *data = IoReadFromBlockDevice(((struct FileSystem *)(fo->connected_fs))->block_device, location);
-    kprint(data);
+    char *data = malloc(512);
+    memcpy(data, IoReadFromBlockDevice(((struct FileSystem *)(fo->connected_fs))->block_device, location), 512);
     return data[offset_in_block];
 }

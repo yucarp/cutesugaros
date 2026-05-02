@@ -1,3 +1,4 @@
+#include <characters.h>
 #include <limine.h>
 #include <string.h>
 #include <kernel/kmalloc.h>
@@ -116,6 +117,7 @@ void KernelInitializeSymbols(){
     add_to_symbols(KernelReadPciConfigWord, "KernelReadPciConfigWord");
     add_to_symbols(KernelMapMmio, "KernelMapMmio");
     add_to_symbols(KernelAllocateFrame, "KernelAllocateFrame");
+    add_to_symbols(FramebufferCharacters, "FramebufferCharacters");
 }
 
 uintptr_t KernelLoadElfLibrary(uint8_t *ptr){
@@ -130,10 +132,10 @@ uintptr_t KernelLoadElfLibrary(uint8_t *ptr){
     struct ELFSectionHeader *sheader = (void *) ((uint64_t) header + header->section_header_offset);
     struct ELFProgramHeader *pheader = (void *) (ptr + header->program_header_offset);
     for(int i = 0; i < header->program_table_entry_number; ++i){
-        for(uint64_t x = 0; x <= ((pheader->memory_size / 0x1000) + 1) * 0x1000; x += 0x1000){
+        for(uint64_t x = 0; x <= ((pheader->memory_size / 0x1000) + 2) * 0x1000; x += 0x1000){
             KernelMapPage((void *) current_cr3, base_address + x, KernelAllocateFrame(), 1);
-            memcpy((void *)(pheader->virtual_address + base_address), ptr + pheader->file_offset, pheader->file_size);
         }
+        memcpy((void *)(pheader->virtual_address + base_address), ptr + pheader->file_offset, pheader->file_size);
         pheader = (void *)((char *)pheader + header->program_table_entry_size);
     }
 
@@ -191,6 +193,10 @@ void KernelResolveElfRelocations(uint8_t *ptr, uintptr_t address){
             for(int j = 0; j < sheader[i].size / sheader[i].entry_size; ++j){
                 char *name = string_table + symbol_table[relocation_table[j].info >> 32].name;
                 switch (relocation_table[j].info & 0xFF){
+                    case 1:
+                        uintptr_t rela_target = relocation_table[j].offset + address;
+                        (*(uint64_t *)rela_target) = symbol_table[relocation_table[j].info >> 32].value + relocation_table[j].addend;
+                        break;
                     case 6:
                         uintptr_t data_target = relocation_table[j].offset + address;
                         void *rel = search_for_modules(name);

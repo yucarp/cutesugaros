@@ -63,15 +63,22 @@ void KernelStart(){
     kprint("Timer has been enabled.\n");
     void (*VgaFramebufferInitialize) (void) = search_for_modules("VgaFramebufferInitialize");
     if(VgaFramebufferInitialize) VgaFramebufferInitialize();
-    kprint("VGA initialized.\n");
+    else {
+        kprint("No boot video, halting.");
+        while(1) asm("hlt");
+    }
+    struct CharDevice *cd = (void *)ResolveObjectName(0, "./Devices/BootVideo");
+    ChangeStandardOutput(cd);
+    dprintf("VGA initialized.\n");
     HalInitializePci();
     HalCheckPciBus(0);
+    dprintf("PCI initialized.\n");
     void (*InitializeAhci) (void) = search_for_modules("InitializeAhci");
     if(InitializeAhci) InitializeAhci();
-    else kprint("No AHCI module found");
+    else dprintf("No AHCI module found");
     HalInitializePs2();
-    //struct BlockDevice *ramdisk = IoCreateRamdisk(KernelGetModule(1), 512);
-    //InitializeExt2FilesystemFromMemory(ramdisk);
+    struct BlockDevice *sata = (void *)ResolveObjectName(0, "./Devices/SataDevice0");
+    InitializeExt2FilesystemFromBlockDevice(sata);
 
     while(1) asm("hlt");
 }

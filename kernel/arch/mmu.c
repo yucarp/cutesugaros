@@ -73,7 +73,7 @@ void *KernelExpandHeap(){
 
 void KernelMapMmio(uint64_t virtual_address, uint64_t physical_address){
     uintptr_t *root = kernel_pml4;
-    uint64_t value = PAT_FIRST | PAT_SECOND | 0x3;
+    uint64_t value = PAT_SECOND | PAT_FIRST | 0x3;
     uintptr_t pml4_index = (virtual_address >> 39) & 0x1FF;
     uintptr_t hpd_index = (virtual_address >> 30) & 0x1FF;
     uintptr_t lpd_index = (virtual_address >> 21) & 0x1FF;

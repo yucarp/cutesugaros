@@ -27,7 +27,7 @@ struct PCIHeader {
 
 struct PCIDevice {
     struct PCIHeader header;
-    uint32_t base_address[6];
+    volatile uint32_t base_address[6];
     uint32_t cardbus_cis_pointer;
     uint16_t subsystem_vendor_id;
     uint16_t subsystem_id;

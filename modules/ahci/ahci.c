@@ -263,7 +263,6 @@ uint16_t * AhciReadSectorInner(struct HBA_Port *port, long start){
     command_fis->multiplier_and_cc |= 1 << 7;
     command_fis->command = 0x25;
 
-    start += 1;
     command_fis->lba0 = (uint8_t)(start & 0xFF);
     command_fis->lba1 = (uint8_t)((start >> 8) & 0xFF);
     command_fis->lba2 = (uint8_t)((start >> 16) & 0xFF);
@@ -271,6 +270,7 @@ uint16_t * AhciReadSectorInner(struct HBA_Port *port, long start){
     command_fis->lba4 = (uint8_t)((start >> 32) & 0xFF);
     command_fis->lba5 = (uint8_t)((start >> 40) & 0xFF);
     command_fis->count = 1;
+    command_fis->device = 1 << 6;
 
     while(port->task_file_data & (0x88));
     port->command_issue = 1 << slot;
