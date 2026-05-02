@@ -237,7 +237,7 @@ uint16_t *AhciSendIdentify(struct HBA_Port *port){
 
 }
 
-uint16_t * AhciReadSectorInner(struct HBA_Port *port, uint64_t start){
+uint16_t * AhciReadSectorInner(struct HBA_Port *port, long start){
     memset(sata_buffer, 0, 1024);
     port->interrupt_status = 0xFFFFFFFF;
     int slot = AhciFindFreeCommandSlot(port);
@@ -261,15 +261,14 @@ uint16_t * AhciReadSectorInner(struct HBA_Port *port, uint64_t start){
     command_fis->multiplier_and_cc |= 1 << 7;
     command_fis->command = 0x25;
 
-    command_fis->lba0 = (uint8_t)start;
-    command_fis->lba1 = (uint8_t)(start >> 8);
-    command_fis->lba2 = (uint8_t)(start >> 16);
-    command_fis->lba3 = (uint8_t)(start >> 24);
-    command_fis->lba4 = (uint8_t)(start >> 32);
-    command_fis->lba5 = (uint8_t)(start >> 40);
+    start += 1;
+    command_fis->lba0 = (uint8_t)(start & 0xFF);
+    command_fis->lba1 = (uint8_t)((start >> 8) & 0xFF);
+    command_fis->lba2 = (uint8_t)((start >> 16) & 0xFF);
+    command_fis->lba3 = (uint8_t)((start >> 24) & 0xFF);
+    command_fis->lba4 = (uint8_t)((start >> 32) & 0xFF);
+    command_fis->lba5 = (uint8_t)((start >> 40) & 0xFF);
     command_fis->count = 1;
-
-    command_fis->device = 1 << 6;
 
     while(port->task_file_data & (0x88));
     port->command_issue = 1 << slot;
@@ -281,10 +280,10 @@ uint16_t * AhciReadSectorInner(struct HBA_Port *port, uint64_t start){
         }
     }
 
-    while(port->command_issue & (1 << slot));
-
-    struct FIS_Register_D2H fis_d2h = {0};
-    memcpy(&fis_d2h, (void *)((uint64_t)port->fis_address + MMIO_OFFSET + 0x40), 0x14);
+    if(port->task_file_data & 0x1){
+        kprint("An error occured\n");
+        return sata_buffer;
+    }
 
     return sata_buffer;
 }
