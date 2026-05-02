@@ -84,7 +84,7 @@ struct FIS_Register_H2D{
     volatile uint16_t count;
     volatile uint8_t icc;
     volatile uint8_t control;
-    volatile uint32_t reserved[4];
+    volatile uint8_t reserved[4];
 }__attribute__((packed));
 
 struct FIS_Register_D2H {
@@ -188,6 +188,8 @@ void InitializeAhciPort(struct HBA_Port *port, int port_num){
 }
 
 int AhciFindFreeCommandSlot(struct HBA_Port *port){
+    if(!bar5) return -1;
+    if(port < 0x20000) return -1;
     uint32_t slots = (port->sata_active | port->command_issue);
     for(int i = 0; i < 32; ++i){
         if((slots & 1) == 0) return i;
@@ -285,6 +287,8 @@ uint16_t * AhciReadSectorInner(struct HBA_Port *port, long start){
         return sata_buffer;
     }
 
+    struct FIS_Register_D2H fis_d2h = {0};
+    memcpy(&fis_d2h, (void *)((uint64_t)port->fis_address + MMIO_OFFSET + 0x40), 0x14);
     return sata_buffer;
 }
 
